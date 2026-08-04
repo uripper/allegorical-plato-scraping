@@ -1,5 +1,5 @@
 [project]
-name = "allegorical-plato-scraping"
+name = "scraping"
 version = "0.1.0"
 description = "Scraping and cleaning data for the Allegorical Plato project"
 readme = "README.md"
@@ -7,7 +7,11 @@ authors = [
     { name = "uripper", email = "uripper0@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "ipython>=9.16.1",
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.0",
+]
 
 [project.scripts]
 scraping = "scraping:main"
