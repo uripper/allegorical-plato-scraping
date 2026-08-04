@@ -1,0 +1,17 @@
+[project]
+name = "allegorical-plato-scraping"
+version = "0.1.0"
+description = "Scraping and cleaning data for the Allegorical Plato project"
+readme = "README.md"
+authors = [
+    { name = "uripper", email = "uripper0@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+scraping = "scraping:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"

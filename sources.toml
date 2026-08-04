@@ -1,0 +1,4 @@
+[perseus]
+repository = "https://github.com/PerseusDL/canonical-greekLit.git"
+ref = "0.0.30852866820"
+subdirectory = "data/tlg0059"
