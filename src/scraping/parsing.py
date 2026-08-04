@@ -19,6 +19,22 @@ NS = {
 
 XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 
+# Apology is just Socrates, but isn't tagged as such
+APOLOGY_GREEK_VERSION_ID = (
+    "urn:cts:greekLit:tlg0059.tlg002.perseus-grc2"
+)
+APOLOGY_GREEK_SPEAKER_ID = "Σωκράτης"
+
+# Lovers is imbecillic and doesn't have clear speaker tags, we skip it for now.
+# Letters is also skipped for now, since it doesn't fit the rest of the dataframe
+# Both these are going to have to join eventually
+UNSEGMENTED_VERSION_IDS = {
+    "urn:cts:greekLit:tlg0059.tlg016.perseus-eng2",
+    "urn:cts:greekLit:tlg0059.tlg016.perseus-grc2",
+    "urn:cts:greekLit:tlg0059.tlg036.perseus-eng2",
+    "urn:cts:greekLit:tlg0059.tlg036.perseus-grc2",
+}
+
 Language = Literal["grc", "eng"]
 VersionType = Literal["edition", "translation"]
 
@@ -68,20 +84,23 @@ def normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
 
-def extract_speech_text(speech: ET.Element) -> str:
-    """Extract speech text while excluding the printed speaker label."""
+def extract_text(element: ET.Element) -> str:
+    """Extract normalized text while excluding printed speaker labels."""
 
     parts: list[str] = []
 
-    if speech.text:
-        parts.append(speech.text)
+    def collect_text(current: ET.Element) -> None:
+        if current.text:
+            parts.append(current.text)
 
-    for child in speech:
-        if local_name(child) != "label":
-            parts.extend(child.itertext())
+        for child in current:
+            if local_name(child) != "label":
+                collect_text(child)
 
-        if child.tail:
-            parts.append(child.tail)
+            if child.tail:
+                parts.append(child.tail)
+
+    collect_text(element)
 
     return normalize_whitespace("".join(parts))
 
@@ -106,13 +125,13 @@ def extract_speaker_label(speech: ET.Element) -> str | None:
 
 
 def extract_stephanus_markers(
-    speech: ET.Element,
+    element: ET.Element,
 ) -> list[str]:
-    """Return Stephanus section markers embedded in a speech."""
+    """Return Stephanus section markers embedded in an element."""
 
     markers: list[str] = []
 
-    for milestone in speech.findall(
+    for milestone in element.findall(
         ".//tei:milestone[@unit='section']",
         NS,
     ):
@@ -169,6 +188,7 @@ def find_text_version(
         f"No edition or translation found in {file_path}"
     )
 
+
 def extract_language(
     root: ET.Element,
     version: ET.Element,
@@ -177,7 +197,6 @@ def extract_language(
     """Extract and validate the text language."""
 
     text = root.find(".//tei:text", NS)
-
     language = version.get(XML_LANG)
 
     if language is None and text is not None:
@@ -193,6 +212,113 @@ def extract_language(
         f"Unsupported or missing language {language!r} "
         f"in {file_path}"
     )
+
+
+def extract_apology_utterances(
+    version: ET.Element,
+    *,
+    version_id: str,
+    version_type: VersionType,
+    language: Language,
+    work_id: str,
+    source_path: str,
+) -> Iterator[UtteranceRecord]:
+    """Yield Socrates' paragraphs from the Greek Apology."""
+
+    sequence = 0
+
+    sections = version.findall(
+        "./tei:div[@type='textpart']",
+        NS,
+    )
+
+    for section in sections:
+        section_number = section.get("n")
+
+        for paragraph in section.findall("./tei:p", NS):
+            text = extract_text(paragraph)
+
+            if not text:
+                continue
+
+            sequence += 1
+
+            yield {
+                "utterance_id": f"{version_id}:{sequence}",
+                "work_id": work_id,
+                "version_id": version_id,
+                "version_type": version_type,
+                "language": language,
+                "sequence": sequence,
+                "section_number": section_number,
+                "speaker_local_id": APOLOGY_GREEK_SPEAKER_ID,
+                "speaker_label": None,
+                "text_normalized": text,
+                "stephanus_markers": (
+                    extract_stephanus_markers(paragraph)
+                ),
+                "rend": paragraph.get("rend"),
+                "source_path": source_path,
+            }
+
+    if sequence == 0:
+        raise ValueError(
+            f"No paragraphs were extracted from {source_path}"
+        )
+
+
+def extract_dialogue_utterances(
+    version: ET.Element,
+    *,
+    version_id: str,
+    version_type: VersionType,
+    language: Language,
+    work_id: str,
+    source_path: str,
+) -> Iterator[UtteranceRecord]:
+    """Yield explicitly marked speech turns from a TEI text."""
+
+    sequence = 0
+
+    sections = version.findall(
+        "./tei:div[@type='textpart']",
+        NS,
+    )
+
+    for section in sections:
+        section_number = section.get("n")
+
+        for speech in section.findall(".//tei:said", NS):
+            text = extract_text(speech)
+
+            if not text:
+                continue
+
+            sequence += 1
+
+            yield {
+                "utterance_id": f"{version_id}:{sequence}",
+                "work_id": work_id,
+                "version_id": version_id,
+                "version_type": version_type,
+                "language": language,
+                "sequence": sequence,
+                "section_number": section_number,
+                "speaker_local_id": extract_speaker_id(speech),
+                "speaker_label": extract_speaker_label(speech),
+                "text_normalized": text,
+                "stephanus_markers": (
+                    extract_stephanus_markers(speech)
+                ),
+                "rend": speech.get("rend"),
+                "source_path": source_path,
+            }
+
+    if sequence == 0:
+        raise ValueError(
+            f"No utterances were extracted from {source_path}"
+        )
+
 
 def extract_utterances(
     file_path: Path,
@@ -215,60 +341,53 @@ def extract_utterances(
     )
 
     work_id = version_id.rsplit(".", maxsplit=1)[0]
-    sequence = 0
+    source_path = file_path.relative_to(corpus_dir).as_posix()
 
-    sections = version.findall(
-        "./tei:div[@type='textpart']",
-        NS,
+    if version_id in UNSEGMENTED_VERSION_IDS:
+        return
+
+    if version_id == APOLOGY_GREEK_VERSION_ID:
+        yield from extract_apology_utterances(
+            version,
+            version_id=version_id,
+            version_type=version_type,
+            language=language,
+            work_id=work_id,
+            source_path=source_path,
+        )
+        return
+
+    yield from extract_dialogue_utterances(
+        version,
+        version_id=version_id,
+        version_type=version_type,
+        language=language,
+        work_id=work_id,
+        source_path=source_path,
     )
-
-    for section in sections:
-        section_number = section.get("n")
-
-        for speech in section.findall(".//tei:said", NS):
-            sequence += 1
-
-            yield {
-                "utterance_id": f"{version_id}:{sequence}",
-                "work_id": work_id,
-                "version_id": version_id,
-                "version_type": version_type,
-                "language": language,
-                "sequence": sequence,
-                "section_number": section_number,
-                "speaker_local_id": extract_speaker_id(speech),
-                "speaker_label": extract_speaker_label(speech),
-                "text_normalized": extract_speech_text(speech),
-                "stephanus_markers": extract_stephanus_markers(
-                    speech
-                ),
-                "rend": speech.get("rend"),
-                "source_path": file_path.relative_to(
-                    corpus_dir
-                ).as_posix(),
-            }
 
 
 def find_source_files(corpus_dir: Path) -> list[Path]:
     """Return all supported Greek and English TEI files."""
 
-    source_files = sorted(
+    if source_files := sorted(
         {
             file_path
             for pattern in SOURCE_PATTERNS
             for file_path in corpus_dir.rglob(pattern)
         }
+    ):
+        return source_files
+
+    patterns = ", ".join(
+        repr(pattern)
+        for pattern in SOURCE_PATTERNS
     )
 
-    if not source_files:
-        patterns = ", ".join(repr(pattern) for pattern in SOURCE_PATTERNS)
-
-        raise FileNotFoundError(
-            f"No files matching {patterns} "
-            f"were found under {corpus_dir}"
-        )
-
-    return source_files
+    raise FileNotFoundError(
+        f"No files matching {patterns} "
+        f"were found under {corpus_dir}"
+    )
 
 
 def build_utterance_dataframe(
