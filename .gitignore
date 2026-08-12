@@ -5,3 +5,4 @@ __pycache__/
 
 .cache/
 data/
+src/scraping/test.ipynb
