@@ -314,7 +314,7 @@ def qa_report(tables: dict[str, pd.DataFrame]) -> dict[str, Any]:
         group["sequence"].tolist() == sorted(group["sequence"].tolist())
         for _, group in u.groupby("version_id", sort=False)
     )
-    return {
+    report = {
         "utterance_count": len(u), "note_count": len(tables["notes"]),
         "row_counts": [{**dict(zip(counts.index.names, idx)), "count": int(value)} for idx, value in counts.items()],
         "null_speaker_counts": u[u["speaker_id"].isna()]["segment_type"].value_counts().to_dict(),
@@ -330,6 +330,19 @@ def qa_report(tables: dict[str, pd.DataFrame]) -> dict[str, Any]:
         "long_utterances_over_5000_chars": int(u["text_clean"].str.len().gt(5000).sum()),
         "unresolved_or_low_confidence_speakers": low.to_dict("records"),
     }
+    if "tokens" in tables:
+        tokens = tables["tokens"]
+        report["linguistic_enrichment"] = {
+            "token_count": len(tokens),
+            "missing_lemma_count": int(tokens["lemma"].isna().sum()),
+            "lemma_coverage": float(tokens["lemma"].notna().mean()) if len(tokens) else 0.0,
+            "unique_surface_forms": int(tokens["normalized"].nunique()),
+            "unique_lemmas": int(tokens["lemma"].nunique()),
+            "topic_token_count": int(tokens["topic_keep"].sum()),
+            "topic_token_rate": float(tokens["topic_keep"].mean()) if len(tokens) else 0.0,
+            "exclusion_reasons": tokens["exclusion_reason"].fillna("retained").value_counts().to_dict(),
+        }
+    return report
 
 
 def write_corpus(tables: dict[str, pd.DataFrame], output_dir: Path = OUTPUT_DIR) -> None:

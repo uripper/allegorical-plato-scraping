@@ -13,9 +13,32 @@ dependencies = [
     "pyarrow>=25.0.0",
 ]
 
+[project.optional-dependencies]
+nlp = [
+    "stanza>=1.14,<2",
+    "torch>=2.13",
+]
+
 [project.scripts]
 scraping = "scraping:main"
+scraping-enrich = "scraping.linguistics:enrich_main"
+scraping-models = "scraping.linguistics:download_main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
