@@ -174,8 +174,10 @@ class StanzaGreekAnalyzer:
                 self.stanza.Document([], text=text)
                 for text in texts[start : start + batch_size]
             ]
-            for document in self.pipeline(documents):
-                results.append(self._document_tokens(document))
+            results.extend(
+                self._document_tokens(document)
+                for document in self.pipeline(documents)
+            )
         return results
 
     @staticmethod
@@ -206,9 +208,7 @@ def exclusion_reason(token: AnalyzedToken) -> str | None:
         return "dialogue_formula"
     if lemma in GREEK_FUNCTION_LEMMAS or token.upos in EXCLUDED_UPOS:
         return "function_word"
-    if not has_lemma:
-        return "missing_lemma"
-    return None
+    return None if has_lemma else "missing_lemma"
 
 
 def enrich_utterances(
@@ -274,7 +274,7 @@ def enrich_utterances(
         for row in enriched.itertuples(index=False)
     ]
     tokens = pd.DataFrame(token_rows, columns=TOKEN_COLUMNS)
-    kept_count = int(tokens["topic_keep"].sum()) if not tokens.empty else 0
+    kept_count = 0 if tokens.empty else int(tokens["topic_keep"].sum())
     run = {
         "analyzer": analyzer.name,
         "analyzer_version": analyzer.analyzer_version,
